@@ -106,9 +106,6 @@ async def start(update, context):
             
             await update.message.reply_text(
                 '⚠️ 请先将我设置为管理员，否则无法使用管理功能。\n\n'
-                '需要以下权限：\n'
-                '- 删除消息\n'
-                '- 封禁成员\n\n'
                 '设置完成后，请在群组中发送 /start 命令重新开始。',
                 reply_markup=reply_markup
             )
@@ -178,9 +175,6 @@ async def button_callback(update, context):
         if not is_bot_admin_status:
             # 如果机器人不是管理员，显示提示消息
             await query.message.reply_text('⚠️ 请先将我设置为管理员，否则无法使用管理功能。\n\n'
-                                         '需要以下权限：\n'
-                                         '- 删除消息\n'
-                                         '- 封禁成员\n\n'
                                          '设置完成后，请在群组中发送 /start 命令重新开始。')
             return
         
@@ -217,9 +211,6 @@ async def button_callback(update, context):
         if not is_bot_admin_status:
             # 如果机器人不是管理员，显示提示消息
             await query.message.reply_text('⚠️ 请先将我设置为管理员，否则无法使用语言设置功能。\n\n'
-                                         '需要以下权限：\n'
-                                         '- 删除消息\n'
-                                         '- 封禁成员\n\n'
                                          '设置完成后，请在群组中发送 /start 命令重新开始。')
             return
         
@@ -259,9 +250,6 @@ async def button_callback(update, context):
         return
     elif query.data == 'need_admin':
         await query.message.reply_text('⚠️ 请先将我设置为管理员，否则无法使用管理功能。\n\n'
-                                      '需要以下权限：\n'
-                                      '- 删除消息\n'
-                                      '- 封禁成员\n\n'
                                       '设置完成后，请在群组中发送 /start 命令重新开始。')
     elif query.data == 'add_channel':
         await query.message.reply_text('请将机器人添加为频道管理员，然后转发一条频道消息给机器人。')
@@ -404,9 +392,6 @@ async def echo(update, context):
                     
                     await update.message.reply_text(
                         '⚠️ 请先将我设置为管理员，否则无法使用管理功能。\n\n'
-                        '需要以下权限：\n'
-                        '- 删除消息\n'
-                        '- 封禁成员\n\n'
                         '设置完成后，请在群组中发送 /start 命令重新开始。',
                         reply_markup=reply_markup
                     )
@@ -584,9 +569,6 @@ async def handle_user_join(update, context):
             
             await update.message.reply_text(
                 '⚠️ 请先将我设置为管理员，否则无法使用管理功能。\n\n'
-                '需要以下权限：\n'
-                '- 删除消息\n'
-                '- 封禁成员\n\n'
                 '设置完成后，请在群组中发送 /start 命令重新开始。',
                 reply_markup=reply_markup
             )

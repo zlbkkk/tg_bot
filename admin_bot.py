@@ -185,6 +185,153 @@ async def button_callback(update, context):
         await query.message.edit_text("抽奖设置", reply_markup=reply_markup)
         return
     
+    # 处理有group_id的抽奖功能
+    elif action == 'lottery' and group_id:
+        # 获取群组名称
+        config = get_group_config(group_id)
+        group_name = config.get('group_name', f'群组 {group_id}')
+        
+        # 获取该群组的抽奖次数
+        lottery_count = config.get('lottery_count', 0)
+        
+        # 获取已开奖、未开奖和取消的数量
+        opened_count = config.get('opened_lottery', 0)
+        pending_count = config.get('pending_lottery', 0)
+        canceled_count = config.get('canceled_lottery', 0)
+        
+        # 构建抽奖信息文本
+        lottery_text = f"🎁 [ {group_name} ]抽奖\n\n创建的抽奖次数:{lottery_count}\n\n已开奖:{opened_count}    未开奖:{pending_count}    取消:{canceled_count}"
+        
+        # 创建抽奖功能按钮
+        keyboard = [
+            [
+                InlineKeyboardButton("➕ 发起抽奖活动", callback_data=f'create_lottery_{group_id}'),
+            ],
+            [
+                InlineKeyboardButton("📝 创建的抽奖记录", callback_data=f'lottery_records_{group_id}'),
+            ],
+            [
+                InlineKeyboardButton("⚙️ 抽奖设置", callback_data=f'lottery_settings_{group_id}'),
+            ],
+            [
+                InlineKeyboardButton("🏠 返回首页", callback_data=f'back_{group_id}')
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.message.edit_text(lottery_text, reply_markup=reply_markup)
+        return
+    
+    # 处理创建抽奖的回调
+    elif action == 'create_lottery':
+        # 如果没有group_id，提示用户选择群组
+        if not group_id:
+            # 获取用户管理的群组列表
+            groups = []
+            configs = load_configs()
+            for gid, config in configs.items():
+                groups.append({
+                    'group_id': gid,
+                    'group_name': config.get('group_name', f'群组 {gid}')
+                })
+            
+            if not groups:
+                await query.message.edit_text("您还没有管理任何群组，请先将机器人添加到群组。")
+                return
+            
+            # 创建群组选择按钮
+            keyboard = []
+            for group in groups:
+                keyboard.append([
+                    InlineKeyboardButton(
+                        f"👥 {group['group_name']}", 
+                        callback_data=f'create_lottery_{group["group_id"]}'
+                    )
+                ])
+            
+            keyboard.append([InlineKeyboardButton("⬅️ 返回", callback_data='lottery')])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.message.edit_text("请选择要创建抽奖的群组：", reply_markup=reply_markup)
+        else:
+            # 直接进入创建抽奖流程
+            await handle_create_lottery(update, context, group_id)
+        return
+    
+    # 处理结束抽奖的回调
+    elif action == 'end_lottery':
+        # 如果没有group_id，提示用户选择群组
+        if not group_id:
+            # 获取用户管理的群组列表
+            groups = []
+            configs = load_configs()
+            for gid, config in configs.items():
+                # 只显示有未开奖的群组
+                if config.get('pending_lottery', 0) > 0:
+                    groups.append({
+                        'group_id': gid,
+                        'group_name': config.get('group_name', f'群组 {gid}'),
+                        'pending': config.get('pending_lottery', 0)
+                    })
+            
+            if not groups:
+                await query.message.edit_text("没有找到有未开奖的群组。")
+                keyboard = [[InlineKeyboardButton("⬅️ 返回", callback_data='lottery')]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.message.edit_text("没有找到有未开奖的群组。", reply_markup=reply_markup)
+                return
+            
+            # 创建群组选择按钮
+            keyboard = []
+            for group in groups:
+                keyboard.append([
+                    InlineKeyboardButton(
+                        f"👥 {group['group_name']} (未开奖: {group['pending']})", 
+                        callback_data=f'end_lottery_{group["group_id"]}'
+                    )
+                ])
+            
+            keyboard.append([InlineKeyboardButton("⬅️ 返回", callback_data='lottery')])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.message.edit_text("请选择要结束抽奖的群组：", reply_markup=reply_markup)
+        else:
+            # 显示该群组的未开奖列表
+            await show_pending_lotteries(update, context, group_id)
+        return
+    
+    # 处理抽奖记录的回调
+    elif action == 'lottery_records':
+        # 获取群组名称
+        config = get_group_config(group_id)
+        group_name = config.get('group_name', f'群组 {group_id}')
+        
+        # 获取抽奖记录
+        lottery_records = config.get('lottery_records', [])
+        
+        if not lottery_records:
+            text = f"[ {group_name} ] 还没有创建过抽奖。"
+        else:
+            text = f"[ {group_name} ] 的抽奖记录：\n\n"
+            for i, record in enumerate(lottery_records, 1):
+                status = "已开奖" if record.get('is_opened', False) else "未开奖"
+                if record.get('is_canceled', False):
+                    status = "已取消"
+                
+                text += f"{i}. {record.get('title', '无标题')} - {status}\n"
+                text += f"   创建时间: {record.get('create_time', '未知')}\n"
+                if status == "已开奖":
+                    text += f"   开奖时间: {record.get('open_time', '未知')}\n"
+                    text += f"   中奖人数: {len(record.get('winners', []))}\n"
+                text += "\n"
+        
+        # 创建返回按钮
+        keyboard = [[InlineKeyboardButton("⬅️ 返回", callback_data=f'lottery_{group_id}')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.message.edit_text(text, reply_markup=reply_markup)
+        return
+    
     elif action == 'banned_words' and not group_id:
         # 违禁词功能
         keyboard = [
@@ -438,6 +585,143 @@ async def button_callback(update, context):
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.message.edit_text("积分设置", reply_markup=reply_markup)
 
+    # 处理确认创建抽奖的回调
+    elif action == 'confirm_lottery':
+        # 获取抽奖数据
+        lottery_data = context.user_data.get('creating_lottery', {})
+        if not lottery_data or lottery_data.get('group_id') != group_id:
+            await query.message.edit_text("抽奖创建已取消或超时。")
+            return
+        
+        # 获取群组配置
+        config = get_group_config(group_id)
+        group_name = config.get('group_name', f'群组 {group_id}')
+        
+        # 创建抽奖记录
+        from datetime import datetime
+        
+        lottery_record = {
+            'title': lottery_data['title'],
+            'description': lottery_data.get('description', ''),
+            'prize_count': lottery_data['prize_count'],
+            'end_time': lottery_data['end_time'],
+            'create_time': datetime.now().strftime("%Y-%m-%d %H:%M"),
+            'is_opened': False,
+            'is_canceled': False,
+            'participants': [],
+            'winners': []
+        }
+        
+        # 更新群组配置
+        lottery_records = config.get('lottery_records', [])
+        lottery_records.append(lottery_record)
+        
+        # 更新统计数据
+        lottery_count = config.get('lottery_count', 0) + 1
+        pending_count = config.get('pending_lottery', 0) + 1
+        
+        update_group_config(group_id, 'lottery_records', lottery_records)
+        update_group_config(group_id, 'lottery_count', lottery_count)
+        update_group_config(group_id, 'pending_lottery', pending_count)
+        
+        # 清除用户状态
+        context.user_data.pop('creating_lottery', None)
+        
+        # 发送成功消息
+        success_text = (
+            f"✅ 抽奖创建成功！\n\n"
+            f"群组：{group_name}\n"
+            f"标题：{lottery_record['title']}\n"
+            f"奖品数量：{lottery_record['prize_count']}\n"
+            f"开奖时间：{lottery_record['end_time']}\n\n"
+            f"抽奖已添加到群组，用户可以参与抽奖。"
+        )
+        
+        # 创建返回按钮
+        keyboard = [[InlineKeyboardButton("返回抽奖菜单", callback_data=f'lottery_{group_id}')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.message.edit_text(success_text, reply_markup=reply_markup)
+        
+        # 在群组中发送抽奖消息
+        try:
+            # 创建参与抽奖按钮
+            participate_keyboard = [
+                [InlineKeyboardButton("🎲 参与抽奖", callback_data=f'participate_lottery_{len(lottery_records)-1}')]
+            ]
+            participate_markup = InlineKeyboardMarkup(participate_keyboard)
+            
+            # 构建抽奖消息
+            lottery_msg = (
+                f"🎁 新抽奖活动\n\n"
+                f"标题：{lottery_record['title']}\n"
+            )
+            
+            if lottery_record['description']:
+                lottery_msg += f"描述：{lottery_record['description']}\n"
+            
+            lottery_msg += (
+                f"奖品数量：{lottery_record['prize_count']}\n"
+                f"开奖时间：{lottery_record['end_time']}\n\n"
+                f"点击下方按钮参与抽奖！"
+            )
+            
+            # 发送消息到群组
+            from telegram import Bot
+            bot = context.bot
+            await bot.send_message(
+                chat_id=int(group_id),
+                text=lottery_msg,
+                reply_markup=participate_markup
+            )
+            
+            logger.info(f"抽奖消息已发送到群组 {group_id}")
+        except Exception as e:
+            logger.error(f"发送抽奖消息到群组时出错: {e}")
+            import traceback
+            logger.error(f"错误详情: {traceback.format_exc()}")
+            
+            # 通知用户
+            await query.message.reply_text(
+                f"⚠️ 抽奖已创建，但发送到群组时出错。请检查机器人是否在群组中并有发送消息的权限。\n"
+                f"错误信息: {str(e)}"
+            )
+    
+    # 处理取消创建抽奖的回调
+    elif action == 'cancel_lottery':
+        # 清除用户状态
+        context.user_data.pop('creating_lottery', None)
+        
+        # 发送取消消息
+        await query.message.edit_text("❌ 抽奖创建已取消。")
+        
+        # 返回抽奖菜单
+        keyboard = [[InlineKeyboardButton("返回抽奖菜单", callback_data=f'lottery{"_"+group_id if group_id else ""}')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.message.edit_text("❌ 抽奖创建已取消。", reply_markup=reply_markup)
+    
+    # 处理抽奖设置的回调
+    elif action == 'lottery_settings':
+        # 获取群组名称
+        config = get_group_config(group_id)
+        group_name = config.get('group_name', f'群组 {group_id}')
+        
+        # 创建设置按钮
+        keyboard = [
+            [
+                InlineKeyboardButton("🔔 开奖通知", callback_data=f'lottery_notify_{group_id}'),
+                InlineKeyboardButton("🔄 自动开奖", callback_data=f'lottery_auto_draw_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("⬅️ 返回", callback_data=f'lottery_{group_id}')
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.message.edit_text(f"[ {group_name} ] 抽奖设置", reply_markup=reply_markup)
+        return
+
 async def help(update, context):
     await update.message.reply_text(
         '管理机器人帮助：\n'
@@ -501,6 +785,11 @@ async def main():
 # 处理私聊消息
 async def handle_private_message(update, context):
     """当用户在私聊中发送非命令消息时，显示管理菜单"""
+    # 检查是否正在创建抽奖
+    if context.user_data.get('creating_lottery'):
+        await handle_lottery_creation_input(update, context)
+        return
+        
     # 检查是否是第一次对话
     if not context.user_data.get('menu_shown'):
         # 标记已显示菜单
@@ -544,6 +833,182 @@ async def handle_private_message(update, context):
             f'设置[ 群组 ]，选择要更改的项目',
             reply_markup=reply_markup
         )
+
+# 处理抽奖创建过程中的用户输入
+async def handle_lottery_creation_input(update, context):
+    """处理用户在创建抽奖过程中的输入"""
+    lottery_data = context.user_data['creating_lottery']
+    group_id = lottery_data['group_id']
+    step = lottery_data['step']
+    
+    # 获取群组名称
+    config = get_group_config(group_id)
+    group_name = config.get('group_name', f'群组 {group_id}')
+    
+    # 创建取消按钮
+    keyboard = [[InlineKeyboardButton("❌ 取消", callback_data=f'cancel_lottery_{group_id}')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # 处理不同步骤的输入
+    if step == 'title':
+        # 保存标题
+        title = update.message.text.strip()
+        if not title:
+            await update.message.reply_text(
+                "标题不能为空，请重新输入：",
+                reply_markup=reply_markup
+            )
+            return
+        
+        lottery_data['title'] = title
+        lottery_data['step'] = 'description'
+        
+        await update.message.reply_text(
+            f"标题已设置为：{title}\n\n"
+            "请输入抽奖描述（可选，输入 - 跳过）：",
+            reply_markup=reply_markup
+        )
+    
+    elif step == 'description':
+        # 保存描述
+        description = update.message.text.strip()
+        if description == '-':
+            description = ""
+        
+        lottery_data['description'] = description
+        lottery_data['step'] = 'prize_count'
+        
+        await update.message.reply_text(
+            f"描述已设置。\n\n"
+            "请输入奖品数量（1-100）：",
+            reply_markup=reply_markup
+        )
+    
+    elif step == 'prize_count':
+        # 保存奖品数量
+        try:
+            prize_count = int(update.message.text.strip())
+            if prize_count < 1 or prize_count > 100:
+                raise ValueError("奖品数量必须在1-100之间")
+            
+            lottery_data['prize_count'] = prize_count
+            lottery_data['step'] = 'end_time'
+            
+            await update.message.reply_text(
+                f"奖品数量已设置为：{prize_count}\n\n"
+                "请输入开奖时间（格式：YYYY-MM-DD HH:MM，例如：2023-12-31 23:59）：",
+                reply_markup=reply_markup
+            )
+        except ValueError:
+            await update.message.reply_text(
+                "请输入有效的数字（1-100）：",
+                reply_markup=reply_markup
+            )
+    
+    elif step == 'end_time':
+        # 保存开奖时间
+        from datetime import datetime
+        
+        try:
+            end_time_str = update.message.text.strip()
+            end_time = datetime.strptime(end_time_str, "%Y-%m-%d %H:%M")
+            
+            # 检查时间是否有效（不能是过去的时间）
+            now = datetime.now()
+            if end_time <= now:
+                raise ValueError("开奖时间必须是未来的时间")
+            
+            lottery_data['end_time'] = end_time_str
+            lottery_data['step'] = 'confirm'
+            
+            # 显示确认信息
+            confirm_text = (
+                f"请确认抽奖信息：\n\n"
+                f"群组：{group_name}\n"
+                f"标题：{lottery_data['title']}\n"
+                f"描述：{lottery_data.get('description', '无')}\n"
+                f"奖品数量：{lottery_data['prize_count']}\n"
+                f"开奖时间：{end_time_str}\n\n"
+                f"确认创建抽奖？"
+            )
+            
+            # 创建确认按钮
+            keyboard = [
+                [InlineKeyboardButton("✅ 确认创建", callback_data=f'confirm_lottery_{group_id}')],
+                [InlineKeyboardButton("❌ 取消", callback_data=f'cancel_lottery_{group_id}')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(confirm_text, reply_markup=reply_markup)
+        except ValueError:
+            await update.message.reply_text(
+                "请输入有效的时间格式（YYYY-MM-DD HH:MM）：",
+                reply_markup=reply_markup
+            )
+
+# 处理创建抽奖的函数
+async def handle_create_lottery(update, context, group_id):
+    query = update.callback_query
+    
+    # 获取群组名称
+    config = get_group_config(group_id)
+    group_name = config.get('group_name', f'群组 {group_id}')
+    
+    # 设置用户状态为等待输入抽奖标题
+    context.user_data['creating_lottery'] = {
+        'group_id': group_id,
+        'step': 'title',
+    }
+    
+    # 创建取消按钮
+    keyboard = [[InlineKeyboardButton("❌ 取消", callback_data=f'cancel_lottery_{group_id}')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.message.edit_text(
+        f"您正在为 [ {group_name} ] 创建抽奖活动。\n\n"
+        "请输入抽奖标题：",
+        reply_markup=reply_markup
+    )
+
+# 显示未开奖列表的函数
+async def show_pending_lotteries(update, context, group_id):
+    query = update.callback_query
+    
+    # 获取群组名称
+    config = get_group_config(group_id)
+    group_name = config.get('group_name', f'群组 {group_id}')
+    
+    # 获取未开奖的抽奖列表
+    lottery_records = config.get('lottery_records', [])
+    pending_lotteries = [
+        record for record in lottery_records 
+        if not record.get('is_opened', False) and not record.get('is_canceled', False)
+    ]
+    
+    if not pending_lotteries:
+        text = f"[ {group_name} ] 没有未开奖的抽奖活动。"
+        keyboard = [[InlineKeyboardButton("⬅️ 返回", callback_data=f'lottery_{group_id}')]]
+    else:
+        text = f"[ {group_name} ] 的未开奖活动：\n\n"
+        keyboard = []
+        
+        for i, lottery in enumerate(pending_lotteries):
+            text += f"{i+1}. {lottery.get('title', '无标题')}\n"
+            text += f"   创建时间: {lottery.get('create_time', '未知')}\n"
+            text += f"   参与人数: {len(lottery.get('participants', []))}\n\n"
+            
+            # 为每个抽奖添加一个按钮
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"🎲 开奖 #{i+1} {lottery.get('title', '无标题')[:10]}...", 
+                    callback_data=f'draw_lottery_{group_id}_{i}'
+                )
+            ])
+        
+        keyboard.append([InlineKeyboardButton("⬅️ 返回", callback_data=f'lottery_{group_id}')])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.message.edit_text(text, reply_markup=reply_markup)
 
 # 只有直接运行此文件时才执行main函数
 if __name__ == '__main__':

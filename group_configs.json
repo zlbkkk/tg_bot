@@ -5,5 +5,12 @@
     "anti_spam": false,
     "auto_delete": false,
     "group_name": "深圳聊天室"
+  },
+  "settings": {
+    "welcome_msg": "欢迎新成员加入！",
+    "language": "zh",
+    "anti_spam": false,
+    "auto_delete": false,
+    "group_name": "群组 settings"
   }
 }
