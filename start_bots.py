@@ -6,6 +6,14 @@ import sys
 import os
 import signal
 
+# 导入配置
+from config import MAIN_BOT_TOKEN, ADMIN_BOT_TOKEN, LOG_LEVEL, LOG_FILE
+
+# 配置日志
+logger.remove()
+logger.add(LOG_FILE, level=LOG_LEVEL)
+logger.add(sys.stderr, level=LOG_LEVEL)
+
 # 导入两个机器人的模块
 sys.path.append('.')
 import tg_bot_test
@@ -13,12 +21,12 @@ import admin_bot
 
 async def run_main_bot():
     """运行主机器人"""
-    print("准备启动主机器人...")
+    logger.info("准备启动主机器人...")
     
     # 创建主机器人应用
-    main_bot = Application.builder().token('8057896490:AAHyuY9GnXIAqWsdwSoRO_SSsE3x4xIVsZ8').build()
+    main_bot = Application.builder().token(MAIN_BOT_TOKEN).build()
     
-    print("主机器人连接成功")
+    logger.info("主机器人连接成功")
     
     # 设置主机器人命令
     await tg_bot_test.setup_commands(main_bot)
@@ -41,7 +49,7 @@ async def run_main_bot():
     await main_bot.initialize()
     await main_bot.start()
     
-    print("主机器人已启动")
+    logger.info("主机器人已启动")
     
     # 启动轮询
     await main_bot.updater.start_polling()
@@ -50,12 +58,12 @@ async def run_main_bot():
 
 async def run_admin_bot():
     """运行管理机器人"""
-    print("准备启动管理机器人...")
+    logger.info("准备启动管理机器人...")
     
     # 创建管理机器人应用
-    admin_bot_app = Application.builder().token('7676940394:AAFAX1DEUyca_zvcXA2ODAaAUbyx_jdUnd0').build()
+    admin_bot_app = Application.builder().token(ADMIN_BOT_TOKEN).build()
     
-    print("管理机器人连接成功")
+    logger.info("管理机器人连接成功")
     
     # 设置管理机器人命令
     await admin_bot.setup_commands(admin_bot_app)
@@ -70,7 +78,7 @@ async def run_admin_bot():
     await admin_bot_app.initialize()
     await admin_bot_app.start()
     
-    print("管理机器人已启动")
+    logger.info("管理机器人已启动")
     
     # 启动轮询
     await admin_bot_app.updater.start_polling()
@@ -79,13 +87,13 @@ async def run_admin_bot():
 
 async def main():
     """主函数"""
-    print("准备启动两个机器人...")
+    logger.info("准备启动两个机器人...")
     
     # 运行两个机器人
     main_bot = await run_main_bot()
     admin_bot_app = await run_admin_bot()
     
-    print("两个机器人已启动，按Ctrl+C停止")
+    logger.info("两个机器人已启动，按Ctrl+C停止")
     
     # 等待停止信号
     try:
@@ -94,12 +102,12 @@ async def main():
             await asyncio.sleep(1)
     except KeyboardInterrupt:
         # 捕获Ctrl+C
-        print("正在停止机器人...")
+        logger.info("正在停止机器人...")
     finally:
         # 停止两个机器人
         await main_bot.stop()
         await admin_bot_app.stop()
-        print("两个机器人已停止")
+        logger.info("两个机器人已停止")
 
 if __name__ == "__main__":
     # 确保没有其他Python进程在运行
@@ -114,9 +122,9 @@ if __name__ == "__main__":
         else:
             os.system(f'pkill -f python -9')
         
-        print("已终止其他Python进程")
+        logger.info("已终止其他Python进程")
     except Exception as e:
-        print(f"终止其他进程时出错: {e}")
+        logger.error(f"终止其他进程时出错: {e}")
     
     # 运行两个机器人
     asyncio.run(main()) 
