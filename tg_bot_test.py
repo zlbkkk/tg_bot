@@ -74,7 +74,7 @@ async def start(update, context):
             if is_user_admin_status:
                 # 如果用户也是管理员，显示完整的按钮
                 keyboard = [
-                    [InlineKeyboardButton("👨‍💻 进入管理菜单 👨‍💻", callback_data='admin_menu')],
+                    [InlineKeyboardButton("👨‍💻 进入管理菜单 👨‍💻", url=f"https://t.me/{ADMIN_BOT_USERNAME}?start={group_id}")],
                     [InlineKeyboardButton("🇨🇳 Language 🇨🇳", callback_data='language')]
                 ]
                 
@@ -315,7 +315,7 @@ async def button_callback(update, context):
                 if is_user_admin_status:
                     # 如果机器人和用户都是管理员，显示完整的按钮
                     keyboard = [
-                        [InlineKeyboardButton("👨‍💻 进入管理菜单 👨‍💻", callback_data='admin_menu')],
+                        [InlineKeyboardButton("👨‍💻 进入管理菜单 👨‍💻", url=f"https://t.me/{ADMIN_BOT_USERNAME}?start={chat_id}")],
                         [InlineKeyboardButton("🇨🇳 Language 🇨🇳", callback_data='language')]
                     ]
                 else:
@@ -379,7 +379,7 @@ async def echo(update, context):
                     if is_user_admin_status:
                         # 如果机器人和用户都是管理员，显示完整的按钮
                         keyboard = [
-                            [InlineKeyboardButton("👨‍💻 进入管理菜单 👨‍💻", callback_data='admin_menu')],
+                            [InlineKeyboardButton("👨‍💻 进入管理菜单 👨‍💻", url=f"https://t.me/{ADMIN_BOT_USERNAME}?start={group_id}")],
                             [InlineKeyboardButton("🇨🇳 Language 🇨🇳", callback_data='language')]
                         ]
                         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -558,7 +558,7 @@ async def handle_user_join(update, context):
             if is_user_admin_status:
                 # 如果机器人和用户都是管理员，显示完整的按钮
                 keyboard = [
-                    [InlineKeyboardButton("👨‍💻 进入管理菜单 👨‍💻", callback_data='admin_menu')],
+                    [InlineKeyboardButton("👨‍💻 进入管理菜单 👨‍💻", url=f"https://t.me/{ADMIN_BOT_USERNAME}?start={group_id}")],
                     [InlineKeyboardButton("🇨🇳 Language 🇨🇳", callback_data='language')]
                 ]
                 
