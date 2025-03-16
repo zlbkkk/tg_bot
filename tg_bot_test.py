@@ -7,6 +7,39 @@ import asyncio
 # 管理机器人的用户名，请替换为您的第二个机器人的用户名
 ADMIN_BOT_USERNAME = "TEST1_SASABOT"  # 替换为您的管理机器人用户名
 
+# 添加一个辅助函数来检查机器人是否为管理员
+async def is_bot_admin(context, chat_id):
+    """检查机器人是否为群组管理员"""
+    try:
+        # 获取机器人信息
+        bot_info = await context.bot.get_me()
+        bot_id = bot_info.id
+        
+        # 获取机器人在群组中的状态
+        chat_member = await context.bot.get_chat_member(chat_id=chat_id, user_id=bot_id)
+        
+        # 判断是否为管理员
+        is_admin = chat_member.status in ['administrator', 'creator']
+        
+        logger.info(f"机器人ID: {bot_id}, 群组ID: {chat_id}, 状态: {chat_member.status}, 是否管理员: {is_admin}")
+        
+        return is_admin
+    except Exception as e:
+        logger.error(f"检查管理员状态时出错: {e}")
+        return False  # 出错时默认返回False
+
+# 添加一个辅助函数来检查用户是否为管理员
+async def is_user_admin(context, chat_id, user_id):
+    """检查用户是否为群组管理员"""
+    try:
+        chat_member = await context.bot.get_chat_member(chat_id=chat_id, user_id=user_id)
+        is_admin = chat_member.status in ['creator', 'administrator']
+        logger.info(f"用户ID: {user_id}, 群组ID: {chat_id}, 状态: {chat_member.status}, 是否管理员: {is_admin}")
+        return is_admin
+    except Exception as e:
+        logger.error(f"检查用户管理员状态时出错: {e}")
+        return False  # 出错时默认返回False
+
 async def start(update, context):
     chat_type = update.effective_chat.type
     
@@ -15,55 +48,70 @@ async def start(update, context):
         # 在群组中的响应
         group_id = update.effective_chat.id
         group_name = update.effective_chat.title
+        user_id = update.effective_user.id
         
         # 保存群组信息到数据库
         db_utils.save_group(group_id, group_name)
         
-        # 检查机器人是否为管理员
+        # 同时保存到管理机器人的配置中
         try:
-            # 直接获取机器人的信息
-            bot_info = await context.bot.get_me()
-            bot_id = bot_info.id
-            
-            # 获取机器人在群组中的状态
-            chat_member = await context.bot.get_chat_member(chat_id=group_id, user_id=bot_id)
-            
-            # 记录详细日志
-            logger.info(f"机器人ID: {bot_id}, 群组ID: {group_id}, 状态: {chat_member.status}")
-            logger.info(f"机器人权限: {chat_member.to_dict()}")
-            
-            # 放宽判断条件，只要不是restricted或left就认为是管理员
-            is_admin = chat_member.status not in ['restricted', 'left', 'kicked']
-            
-            if is_admin:
+            from admin_bot import get_group_config, update_group_config
+            config = get_group_config(group_id)
+            update_group_config(group_id, 'group_name', group_name)
+        except Exception as e:
+            logger.error(f"保存群组名称到配置时出错: {e}")
+        
+        # 检查机器人是否为管理员
+        is_bot_admin_status = await is_bot_admin(context, group_id)
+        logger.info(f"start命令 - 机器人管理员状态: {is_bot_admin_status}")
+        
+        # 检查发送命令的用户是否为管理员
+        is_user_admin_status = await is_user_admin(context, group_id, user_id)
+        logger.info(f"start命令 - 用户管理员状态: {is_user_admin_status}")
+        
+        if is_bot_admin_status:
+            # 如果机器人是管理员
+            if is_user_admin_status:
+                # 如果用户也是管理员，显示完整的按钮
                 keyboard = [
-                    [InlineKeyboardButton("👨‍💻 进入管理菜单 👨‍💻", url=f"https://t.me/{ADMIN_BOT_USERNAME}?start={group_id}")],
+                    [InlineKeyboardButton("👨‍💻 进入管理菜单 👨‍💻", callback_data='admin_menu')],
                     [InlineKeyboardButton("🇨🇳 Language 🇨🇳", callback_data='language')]
                 ]
+                
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await update.message.reply_text(
+                    '欢迎使用机器人:\n'
+                    '1)请将我设置为管理员，否则我无法回复命令，请至少赋予以下权限：\n'
+                    '- 删除消息\n'
+                    '- 封禁成员\n'
+                    '2)在机器人私聊中发送 /start 打开管理菜单。\n'
+                    '(本消息仅机器人入群时提醒)',
+                    reply_markup=reply_markup
+                )
             else:
-                logger.warning(f"机器人在群组 {group_id} 中不是管理员，状态: {chat_member.status}")
-                keyboard = [
-                    [InlineKeyboardButton("⚠️ 请先将我设为管理员 ⚠️", callback_data='need_admin')]
-                ]
-        except Exception as e:
-            logger.error(f"检查管理员状态时出错: {e}")
-            # 出错时默认显示所有按钮
+                # 如果用户不是管理员，显示权限不足的提示
+                await update.message.reply_text(
+                    '⚠️ 您不是群组管理员，无法使用管理功能。\n'
+                    '请联系群组管理员进行操作。'
+                )
+        else:
+            # 如果机器人不是管理员，只显示提示按钮，不显示管理菜单和Language按钮
+            logger.warning(f"机器人在群组 {group_id} 中不是管理员")
             keyboard = [
-                [InlineKeyboardButton("👨‍💻 进入管理菜单 👨‍💻", url=f"https://t.me/{ADMIN_BOT_USERNAME}?start={group_id}")],
-                [InlineKeyboardButton("🇨🇳 Language 🇨🇳", callback_data='language')]
+                [InlineKeyboardButton("⚠️ 请先将我设为管理员 ⚠️", callback_data='need_admin')]
             ]
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.message.reply_text(
-            '欢迎使用机器人:\n'
-            '1)请将我设置为管理员，否则我无法回复命令，请至少赋予以下权限：\n'
-            '- 删除消息\n'
-            '- 封禁成员\n'
-            '2)在机器人私聊中发送 /start 打开管理菜单。\n'
-            '(本消息仅机器人入群时提醒)',
-            reply_markup=reply_markup
-        )
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                '⚠️ 请先将我设置为管理员，否则无法使用管理功能。\n\n'
+                '需要以下权限：\n'
+                '- 删除消息\n'
+                '- 封禁成员\n\n'
+                '设置完成后，请在群组中发送 /start 命令重新开始。',
+                reply_markup=reply_markup
+            )
     else:
         # 在私聊中的响应
         # 获取机器人所在的群组列表
@@ -81,10 +129,12 @@ async def start(update, context):
             
             # 为每个群组添加一个按钮
             for group in groups:
+                # 使用标准的t.me链接格式
+                group_id_str = str(group['group_id']).replace('-100', '')
                 keyboard.append([
                     InlineKeyboardButton(
-                        f"👥 {group['group_name']}", 
-                        url=f"https://t.me/c/{str(group['group_id']).replace('-100', '')}"
+                        f"👥 {group['group_name']} (点击后发送/start)", 
+                        url=f"https://t.me/c/{group_id_str}"
                     )
                 ])
         
@@ -105,10 +155,90 @@ async def start(update, context):
 
 async def button_callback(update, context):
     query = update.callback_query
+    
+    # 获取用户ID和群组ID
+    user_id = query.from_user.id
+    chat_id = query.message.chat.id
+    
+    # 获取机器人ID
+    bot_id = context.bot.id
+    
+    # 记录回调数据
+    logger.info(f"收到按钮回调: {query.data}, 用户ID: {user_id}, 群组ID: {chat_id}")
+    
+    # 继续处理原有的回调逻辑
     await query.answer()
     
-    if query.data == 'language':
-        # 直接显示语言选择选项，不再检查管理员状态
+    # 直接处理admin_menu和language回调
+    if query.data == 'admin_menu':
+        # 首先检查机器人是否为管理员
+        is_bot_admin_status = await is_bot_admin(context, chat_id)
+        logger.info(f"机器人管理员状态: {is_bot_admin_status}")
+        
+        if not is_bot_admin_status:
+            # 如果机器人不是管理员，显示提示消息
+            await query.message.reply_text('⚠️ 请先将我设置为管理员，否则无法使用管理功能。\n\n'
+                                         '需要以下权限：\n'
+                                         '- 删除消息\n'
+                                         '- 封禁成员\n\n'
+                                         '设置完成后，请在群组中发送 /start 命令重新开始。')
+            return
+        
+        # 检查用户是否为群组管理员
+        is_user_admin_status = await is_user_admin(context, chat_id, user_id)
+        logger.info(f"用户管理员状态: {is_user_admin_status}")
+        
+        # 检查用户是否是TEST999kkkBot管理员
+        is_bot_admin_user = await is_test999_admin(user_id, bot_id)
+        logger.info(f"机器人管理员状态: {is_bot_admin_user}")
+        
+        if not is_user_admin_status and not is_bot_admin_user:
+            # 如果用户不是管理员，显示提示消息
+            await query.answer("⚠️ 只有管理员才可以使用此功能！", show_alert=True)
+            return
+        
+        # 用户是管理员，继续处理
+        logger.info(f"准备重定向到管理机器人 {ADMIN_BOT_USERNAME}")
+        
+        # 重定向到管理机器人
+        keyboard = [
+            [InlineKeyboardButton("👨‍💻 进入管理菜单 👨‍💻", url=f"https://t.me/{ADMIN_BOT_USERNAME}?start={chat_id}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.message.reply_text("请点击下方按钮进入管理菜单：", reply_markup=reply_markup)
+        logger.info("成功发送管理菜单按钮")
+        return
+    
+    elif query.data == 'language':
+        # 首先检查机器人是否为管理员
+        is_bot_admin_status = await is_bot_admin(context, chat_id)
+        logger.info(f"机器人管理员状态: {is_bot_admin_status}")
+        
+        if not is_bot_admin_status:
+            # 如果机器人不是管理员，显示提示消息
+            await query.message.reply_text('⚠️ 请先将我设置为管理员，否则无法使用语言设置功能。\n\n'
+                                         '需要以下权限：\n'
+                                         '- 删除消息\n'
+                                         '- 封禁成员\n\n'
+                                         '设置完成后，请在群组中发送 /start 命令重新开始。')
+            return
+        
+        # 检查用户是否为群组管理员
+        is_user_admin_status = await is_user_admin(context, chat_id, user_id)
+        logger.info(f"用户管理员状态: {is_user_admin_status}")
+        
+        # 检查用户是否是TEST999kkkBot管理员
+        is_bot_admin_user = await is_test999_admin(user_id, bot_id)
+        logger.info(f"机器人管理员状态: {is_bot_admin_user}")
+        
+        if not is_user_admin_status and not is_bot_admin_user:
+            # 如果用户不是管理员，显示提示消息
+            await query.answer("⚠️ 只有管理员才可以使用此功能！", show_alert=True)
+            return
+        
+        # 用户是管理员，继续处理
+        logger.info("准备显示语言选择菜单")
+        
         # 创建语言选择按钮
         keyboard = [
             [
@@ -125,6 +255,8 @@ async def button_callback(update, context):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.message.reply_text('请选择语言 / Please select language / 言語を選択してください', reply_markup=reply_markup)
+        logger.info("成功发送语言选择菜单")
+        return
     elif query.data == 'need_admin':
         await query.message.reply_text('⚠️ 请先将我设置为管理员，否则无法使用管理功能。\n\n'
                                       '需要以下权限：\n'
@@ -172,11 +304,30 @@ async def button_callback(update, context):
         # 返回主菜单
         chat_id = query.message.chat.id
         if query.message.chat.type in ['group', 'supergroup']:
-            # 在群组中
-            keyboard = [
-                [InlineKeyboardButton("👨‍💻 进入管理菜单 👨‍💻", url=f"https://t.me/{ADMIN_BOT_USERNAME}?start={chat_id}")],
-                [InlineKeyboardButton("🇨🇳 Language 🇨🇳", callback_data='language')]
-            ]
+            # 在群组中，检查机器人是否为管理员
+            is_bot_admin_status = await is_bot_admin(context, chat_id)
+            
+            # 检查用户是否为管理员
+            user_id = query.from_user.id
+            is_user_admin_status = await is_user_admin(context, chat_id, user_id)
+            
+            if is_bot_admin_status:
+                if is_user_admin_status:
+                    # 如果机器人和用户都是管理员，显示完整的按钮
+                    keyboard = [
+                        [InlineKeyboardButton("👨‍💻 进入管理菜单 👨‍💻", callback_data='admin_menu')],
+                        [InlineKeyboardButton("🇨🇳 Language 🇨🇳", callback_data='language')]
+                    ]
+                else:
+                    # 如果用户不是管理员，显示权限不足的提示
+                    await query.message.reply_text('⚠️ 您不是群组管理员，无法使用管理功能。\n'
+                                                '请联系群组管理员进行操作。')
+                    return
+            else:
+                # 如果机器人不是管理员，显示提示按钮
+                keyboard = [
+                    [InlineKeyboardButton("⚠️ 请先将我设为管理员 ⚠️", callback_data='need_admin')]
+                ]
         else:
             # 在私聊中
             keyboard = [
@@ -200,6 +351,65 @@ async def echo(update, context):
     # 只在私聊中回复消息
     if update.effective_chat.type == 'private':
         await update.message.reply_text('请使用 /start 命令开始使用机器人')
+    # 在群组中，如果消息是"start"，则执行start命令
+    elif update.effective_chat.type in ['group', 'supergroup']:
+        if update.message.text and update.message.text.lower() == 'start':
+            await start(update, context)
+        # 检查是否是从链接跳转过来的用户的第一条消息
+        elif update.message.text and not update.message.text.startswith('/'):
+            # 获取用户ID
+            user_id = update.effective_user.id
+            
+            # 检查是否是该用户在该群组的第一条消息
+            # 这里使用context.user_data来存储用户状态
+            group_id = update.effective_chat.id
+            user_key = f"{user_id}_{group_id}_welcomed"
+            
+            if not context.user_data.get(user_key):
+                # 标记已经欢迎过该用户
+                context.user_data[user_key] = True
+                
+                # 检查机器人是否为管理员
+                is_bot_admin_status = await is_bot_admin(context, group_id)
+                
+                # 检查用户是否为管理员
+                is_user_admin_status = await is_user_admin(context, group_id, user_id)
+                
+                if is_bot_admin_status:
+                    if is_user_admin_status:
+                        # 如果机器人和用户都是管理员，显示完整的按钮
+                        keyboard = [
+                            [InlineKeyboardButton("👨‍💻 进入管理菜单 👨‍💻", callback_data='admin_menu')],
+                            [InlineKeyboardButton("🇨🇳 Language 🇨🇳", callback_data='language')]
+                        ]
+                        reply_markup = InlineKeyboardMarkup(keyboard)
+                        
+                        # 使用reply_to_message_id回复用户的消息
+                        await update.message.reply_text(
+                            '请发送 /start 命令开始使用机器人，或点击下方按钮进入管理菜单。',
+                            reply_markup=reply_markup
+                        )
+                    else:
+                        # 如果用户不是管理员，只显示普通提示
+                        await update.message.reply_text(
+                            '欢迎使用机器人！请发送 /start 命令开始使用。\n'
+                            '注意：管理功能仅限群组管理员使用。'
+                        )
+                else:
+                    # 如果机器人不是管理员，只显示提示按钮
+                    keyboard = [
+                        [InlineKeyboardButton("⚠️ 请先将我设为管理员 ⚠️", callback_data='need_admin')]
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    
+                    await update.message.reply_text(
+                        '⚠️ 请先将我设置为管理员，否则无法使用管理功能。\n\n'
+                        '需要以下权限：\n'
+                        '- 删除消息\n'
+                        '- 封禁成员\n\n'
+                        '设置完成后，请在群组中发送 /start 命令重新开始。',
+                        reply_markup=reply_markup
+                    )
 
 async def error(update, context):
     logger.warning('Update "%s" caused error "%s"', update, context.error)
@@ -217,6 +427,9 @@ async def handle_chat_member(update, context):
                     # 保存群组信息
                     db_utils.save_group(chat_id, chat_title)
                     logger.info(f"机器人被添加到群组: {chat_id}")
+                    
+                    # 自动发送start命令
+                    await start(update, context)
         
         # 检查是否有成员离开
         if update.message and update.message.left_chat_member:
@@ -226,8 +439,15 @@ async def handle_chat_member(update, context):
                 # 标记群组为非活跃
                 db_utils.mark_group_inactive(chat_id)
                 logger.info(f"机器人被踢出群组: {chat_id}")
+                
+                # 记录详细信息
+                chat_title = update.effective_chat.title
+                user_id = update.from_user.id if update.from_user else "未知用户"
+                logger.info(f"机器人被用户 {user_id} 从群组 {chat_id} ({chat_title}) 中踢出")
     except Exception as e:
         logger.error(f"处理群组成员变化时出错: {e}")
+        import traceback
+        logger.error(f"错误详情: {traceback.format_exc()}")
 
 # 处理机器人成员状态变化
 async def chat_member_status(update, context):
@@ -237,17 +457,22 @@ async def chat_member_status(update, context):
         chat_id = result.chat.id
         chat_title = result.chat.title
         
-        # 如果机器人被添加到群组
-        if result.new_chat_member and result.new_chat_member.status in ['member', 'administrator']:
+        # 记录详细的状态变化信息
+        old_status = result.old_chat_member.status if result.old_chat_member else "unknown"
+        new_status = result.new_chat_member.status if result.new_chat_member else "unknown"
+        logger.info(f"机器人状态变化: {chat_id} - {chat_title}, 旧状态: {old_status}, 新状态: {new_status}")
+        
+        # 如果机器人被添加到群组或权限被提升为管理员
+        if (old_status in ['left', 'kicked', 'restricted'] or old_status == "unknown") and new_status in ['member', 'administrator']:
             # 保存群组信息
             db_utils.save_group(chat_id, chat_title)
-            logger.info(f"机器人被添加到群组 (通过状态变化): {chat_id}")
+            logger.info(f"机器人被添加到群组或提升为管理员: {chat_id}")
         
-        # 如果机器人被踢出群组
-        if result.new_chat_member and result.new_chat_member.status in ['left', 'kicked']:
+        # 如果机器人被踢出群组或权限被降低
+        elif old_status in ['member', 'administrator'] and new_status in ['left', 'kicked', 'restricted']:
             # 标记群组为非活跃
             db_utils.mark_group_inactive(chat_id)
-            logger.info(f"机器人被踢出群组 (通过状态变化): {chat_id}")
+            logger.info(f"机器人被踢出群组或权限被降低: {chat_id}")
 
 async def setup_commands(application):
     commands = [
@@ -268,6 +493,21 @@ async def main():
     
     # 添加命令处理器
     application.add_handler(CommandHandler("start", start))
+    
+    # 添加带有@机器人用户名的命令处理器
+    bot_info = await application.bot.get_me()
+    bot_username = bot_info.username
+    
+    # 创建一个自定义过滤器，用于处理带有@机器人用户名的命令
+    async def filter_command_with_username(update, context):
+        if update.message and update.message.text:
+            command_pattern = f"/start@{bot_username}"
+            return command_pattern in update.message.text
+        return False
+    
+    # 添加带有@机器人用户名的start命令处理器
+    application.add_handler(MessageHandler(filters.create(filter_command_with_username), start))
+    
     application.add_handler(CommandHandler("help", help))
     application.add_handler(CommandHandler("about", about))
     
@@ -283,6 +523,9 @@ async def main():
     # 处理机器人成员状态变化
     application.add_handler(ChatMemberHandler(chat_member_status, ChatMemberHandler.MY_CHAT_MEMBER))
     
+    # 添加一个特殊处理器，监听用户进入群组的事件
+    application.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_user_join))
+    
     application.add_error_handler(error)
 
     # 启动机器人
@@ -290,6 +533,65 @@ async def main():
     await application.start()
     await application.run_polling()
     print("执行完成")
+
+# 处理用户进入群组的事件
+async def handle_user_join(update, context):
+    """当用户进入群组时，提示他们输入/start命令"""
+    # 检查是否是机器人自己
+    if any(member.id == context.bot.id for member in update.message.new_chat_members):
+        # 如果是机器人自己，已经在handle_chat_member中处理了
+        return
+    
+    # 如果是其他用户，发送欢迎消息并提示输入/start
+    try:
+        # 获取群组配置
+        group_id = update.effective_chat.id
+        user_id = update.effective_user.id
+        
+        # 检查机器人是否为管理员
+        is_bot_admin_status = await is_bot_admin(context, group_id)
+        
+        # 检查发送命令的用户是否为管理员
+        is_user_admin_status = await is_user_admin(context, group_id, user_id)
+        
+        if is_bot_admin_status:
+            if is_user_admin_status:
+                # 如果机器人和用户都是管理员，显示完整的按钮
+                keyboard = [
+                    [InlineKeyboardButton("👨‍💻 进入管理菜单 👨‍💻", callback_data='admin_menu')],
+                    [InlineKeyboardButton("🇨🇳 Language 🇨🇳", callback_data='language')]
+                ]
+                
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await update.message.reply_text(
+                    f'欢迎新成员加入！请点击下方按钮进入管理菜单，或者发送 /start 命令开始使用机器人。',
+                    reply_markup=reply_markup
+                )
+            else:
+                # 如果用户不是管理员，只显示普通欢迎消息
+                await update.message.reply_text(
+                    f'欢迎新成员加入！请发送 /start 命令开始使用机器人。\n'
+                    '注意：管理功能仅限群组管理员使用。'
+                )
+        else:
+            # 如果机器人不是管理员，只显示提示按钮
+            keyboard = [
+                [InlineKeyboardButton("⚠️ 请先将我设为管理员 ⚠️", callback_data='need_admin')]
+            ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                '⚠️ 请先将我设置为管理员，否则无法使用管理功能。\n\n'
+                '需要以下权限：\n'
+                '- 删除消息\n'
+                '- 封禁成员\n\n'
+                '设置完成后，请在群组中发送 /start 命令重新开始。',
+                reply_markup=reply_markup
+            )
+    except Exception as e:
+        logger.error(f"处理用户加入群组时出错: {e}")
 
 # 只有直接运行此文件时才执行main函数
 if __name__ == '__main__':
