@@ -10,6 +10,7 @@ ADMIN_BOT_USERNAME = "TEST1_SASABOT"  # 替换为您的管理机器人用户名
 async def start(update, context):
     chat_type = update.effective_chat.type
     
+    
     if chat_type == 'group' or chat_type == 'supergroup':
         # 在群组中的响应
         group_id = update.effective_chat.id

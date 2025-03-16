@@ -50,10 +50,10 @@ async def start(update, context):
         group_id = args[0]
         config = get_group_config(group_id)
         
-        # 创建管理菜单
+        # 创建管理菜单，与截图中的布局完全一致，2x8网格布局
         keyboard = [
             [
-                InlineKeyboardButton("🎲 抽奖", callback_data=f'lottery_{group_id}'),
+                InlineKeyboardButton("🎁 抽奖", callback_data=f'lottery_{group_id}'),
                 InlineKeyboardButton("🔗 邀请链接", callback_data=f'invite_{group_id}')
             ],
             [
@@ -61,23 +61,24 @@ async def start(update, context):
                 InlineKeyboardButton("📊 统计", callback_data=f'stats_{group_id}')
             ],
             [
-                InlineKeyboardButton("🤖 自动回复", callback_data=f'autoreply_{group_id}'),
+                InlineKeyboardButton("💬 自动回复", callback_data=f'autoreply_{group_id}'),
                 InlineKeyboardButton("⏰ 定时消息", callback_data=f'schedule_{group_id}')
             ],
             [
-                InlineKeyboardButton("🛡️ 验证", callback_data=f'verify_{group_id}'),
+                InlineKeyboardButton("🤖 验证", callback_data=f'verify_{group_id}'),
                 InlineKeyboardButton("👋 进群欢迎", callback_data=f'welcome_{group_id}')
             ],
             [
-                InlineKeyboardButton("🗑️ 反垃圾", callback_data=f'antispam_{group_id}'),
-                InlineKeyboardButton("🚫 反刷屏", callback_data=f'antiflood_{group_id}')
+                InlineKeyboardButton("📧 反垃圾", callback_data=f'antispam_{group_id}'),
+                InlineKeyboardButton("💬 反刷屏", callback_data=f'antiflood_{group_id}')
             ],
             [
-                InlineKeyboardButton("🔍 检查", callback_data=f'check_{group_id}'),
-                InlineKeyboardButton("⬇️ 下一页", callback_data=f'nextpage_{group_id}')
+                InlineKeyboardButton("📢 违禁词", callback_data=f'banned_words_{group_id}'),
+                InlineKeyboardButton("🔍 检查", callback_data=f'check_{group_id}')
             ],
             [
-                InlineKeyboardButton("🇨🇳 Language", callback_data=f'language_{group_id}')
+                InlineKeyboardButton("🏆 积分", callback_data=f'points_{group_id}'),
+                InlineKeyboardButton("👤 新成员限制", callback_data=f'new_member_restriction_{group_id}')
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -108,7 +109,39 @@ async def button_callback(update, context):
     action = data[0]
     group_id = data[1] if len(data) > 1 else None
     
-    if action == 'lottery':
+    if action == 'notify':
+        # 通知功能
+        keyboard = [
+            [
+                InlineKeyboardButton("发送通知", callback_data=f'send_notify_{group_id}'),
+                InlineKeyboardButton("通知设置", callback_data=f'notify_settings_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("⬅️ 返回", callback_data=f'back_{group_id}')
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.message.edit_text("通知功能设置", reply_markup=reply_markup)
+    
+    elif action == 'game':
+        # 游戏功能
+        keyboard = [
+            [
+                InlineKeyboardButton("猜数字", callback_data=f'game_number_{group_id}'),
+                InlineKeyboardButton("石头剪刀布", callback_data=f'game_rps_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("猜谜语", callback_data=f'game_riddle_{group_id}'),
+                InlineKeyboardButton("更多游戏", callback_data=f'game_more_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("⬅️ 返回", callback_data=f'back_{group_id}')
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.message.edit_text("游戏功能设置", reply_markup=reply_markup)
+    
+    elif action == 'lottery':
         # 抽奖功能
         keyboard = [
             [
@@ -146,10 +179,10 @@ async def button_callback(update, context):
         )
     
     elif action == 'back':
-        # 返回主菜单
+        # 返回主菜单，与start函数中的布局保持一致
         keyboard = [
             [
-                InlineKeyboardButton("🎲 抽奖", callback_data=f'lottery_{group_id}'),
+                InlineKeyboardButton("🎁 抽奖", callback_data=f'lottery_{group_id}'),
                 InlineKeyboardButton("🔗 邀请链接", callback_data=f'invite_{group_id}')
             ],
             [
@@ -157,23 +190,24 @@ async def button_callback(update, context):
                 InlineKeyboardButton("📊 统计", callback_data=f'stats_{group_id}')
             ],
             [
-                InlineKeyboardButton("🤖 自动回复", callback_data=f'autoreply_{group_id}'),
+                InlineKeyboardButton("💬 自动回复", callback_data=f'autoreply_{group_id}'),
                 InlineKeyboardButton("⏰ 定时消息", callback_data=f'schedule_{group_id}')
             ],
             [
-                InlineKeyboardButton("🛡️ 验证", callback_data=f'verify_{group_id}'),
+                InlineKeyboardButton("🤖 验证", callback_data=f'verify_{group_id}'),
                 InlineKeyboardButton("👋 进群欢迎", callback_data=f'welcome_{group_id}')
             ],
             [
-                InlineKeyboardButton("🗑️ 反垃圾", callback_data=f'antispam_{group_id}'),
-                InlineKeyboardButton("🚫 反刷屏", callback_data=f'antiflood_{group_id}')
+                InlineKeyboardButton("📧 反垃圾", callback_data=f'antispam_{group_id}'),
+                InlineKeyboardButton("💬 反刷屏", callback_data=f'antiflood_{group_id}')
             ],
             [
-                InlineKeyboardButton("🔍 检查", callback_data=f'check_{group_id}'),
-                InlineKeyboardButton("⬇️ 下一页", callback_data=f'nextpage_{group_id}')
+                InlineKeyboardButton("📢 违禁词", callback_data=f'banned_words_{group_id}'),
+                InlineKeyboardButton("🔍 检查", callback_data=f'check_{group_id}')
             ],
             [
-                InlineKeyboardButton("🇨🇳 Language", callback_data=f'language_{group_id}')
+                InlineKeyboardButton("🏆 积分", callback_data=f'points_{group_id}'),
+                InlineKeyboardButton("👤 新成员限制", callback_data=f'new_member_restriction_{group_id}')
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -213,7 +247,7 @@ async def button_callback(update, context):
             text=f'设置[ 群组 ]，选择要更改的项目',
             reply_markup=InlineKeyboardMarkup([
                 [
-                    InlineKeyboardButton("🎲 抽奖", callback_data=f'lottery_{group_id}'),
+                    InlineKeyboardButton("🎁 抽奖", callback_data=f'lottery_{group_id}'),
                     InlineKeyboardButton("🔗 邀请链接", callback_data=f'invite_{group_id}')
                 ],
                 [
@@ -221,6 +255,59 @@ async def button_callback(update, context):
                 ]
             ])
         )
+    
+    elif action == 'banned_words':
+        # 违禁词功能
+        keyboard = [
+            [
+                InlineKeyboardButton("添加违禁词", callback_data=f'add_banned_word_{group_id}'),
+                InlineKeyboardButton("删除违禁词", callback_data=f'remove_banned_word_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("查看违禁词列表", callback_data=f'list_banned_words_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("⬅️ 返回", callback_data=f'back_{group_id}')
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.message.edit_text("违禁词设置", reply_markup=reply_markup)
+    
+    elif action == 'points':
+        # 积分功能
+        keyboard = [
+            [
+                InlineKeyboardButton("积分规则", callback_data=f'points_rules_{group_id}'),
+                InlineKeyboardButton("积分排行", callback_data=f'points_ranking_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("积分奖励", callback_data=f'points_rewards_{group_id}'),
+                InlineKeyboardButton("积分设置", callback_data=f'points_settings_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("⬅️ 返回", callback_data=f'back_{group_id}')
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.message.edit_text("积分系统设置", reply_markup=reply_markup)
+    
+    elif action == 'new_member_restriction':
+        # 新成员限制功能
+        keyboard = [
+            [
+                InlineKeyboardButton("开启限制", callback_data=f'enable_restriction_{group_id}'),
+                InlineKeyboardButton("关闭限制", callback_data=f'disable_restriction_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("设置限制时间", callback_data=f'set_restriction_time_{group_id}'),
+                InlineKeyboardButton("设置限制条件", callback_data=f'set_restriction_condition_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("⬅️ 返回", callback_data=f'back_{group_id}')
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.message.edit_text("新成员限制设置", reply_markup=reply_markup)
 
 async def help(update, context):
     await update.message.reply_text(
