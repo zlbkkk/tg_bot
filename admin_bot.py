@@ -5,43 +5,57 @@ import json
 import os
 import asyncio
 from config import MAIN_BOT_USERNAME, ADMIN_BOT_USERNAME
+import telegram
+# 导入数据库操作模块
+from db_operations import get_group_config_db, update_group_config_db, get_user_points, add_user_points, deduct_user_points
+from db_operations import get_points_ranking as db_get_points_ranking
+from db_operations import clear_group_points
 
-# 存储群组配置的文件
+# 存储群组配置的文件 (保留兼容性)
 CONFIG_FILE = 'group_configs.json'
 
-# 加载群组配置
+# 加载群组配置 (保留兼容性)
 def load_configs():
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
     return {}
 
-# 保存群组配置
+# 保存群组配置 (保留兼容性)
 def save_configs(configs):
     with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
         json.dump(configs, f, ensure_ascii=False, indent=2)
 
-# 获取群组配置
+# 获取群组配置 (使用数据库)
 def get_group_config(group_id):
-    configs = load_configs()
-    if str(group_id) not in configs:
-        configs[str(group_id)] = {
+    # 从数据库获取群组配置
+    config = get_group_config_db(group_id)
+    
+    # 如果数据库中没有配置，则使用默认值
+    if not config:
+        config = {
             'welcome_msg': '欢迎新成员加入！',
             'language': 'zh',
             'anti_spam': False,
             'auto_delete': False,
-            'group_name': f'群组 {group_id}'  # 添加默认群组名称
+            'group_name': f'群组 {group_id}',
+            'points_enabled': False,
+            'checkin_points': 1,
+            'message_points': 1,
+            'daily_message_limit': 0,
+            'min_message_length': 0,
+            'invite_points': 1,
+            'daily_invite_limit': 0,
+            'points_alias': '积分',
+            'ranking_alias': '积分排行'
         }
-        save_configs(configs)
-    return configs[str(group_id)]
+    
+    return config
 
-# 更新群组配置
+# 更新群组配置 (使用数据库)
 def update_group_config(group_id, key, value):
-    configs = load_configs()
-    if str(group_id) not in configs:
-        configs[str(group_id)] = {}
-    configs[str(group_id)][key] = value
-    save_configs(configs)
+    # 更新数据库中的群组配置
+    return update_group_config_db(group_id, key, value)
 
 async def start(update, context):
     user_id = update.effective_user.id
@@ -367,6 +381,411 @@ async def button_callback(update, context):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.message.edit_text("积分系统设置", reply_markup=reply_markup)
+        return
+    
+    elif action == 'points' and group_id:
+        # 获取群组配置
+        config = get_group_config(group_id)
+        group_name = config.get('group_name', f'群组 {group_id}')
+        
+        # 获取积分系统状态
+        points_enabled = config.get('points_enabled', False)
+        status_text = "✅ 启用" if points_enabled else "❌ 关闭"
+        
+        # 构建积分规则文本
+        checkin_points = config.get('checkin_points', 1)
+        message_points = config.get('message_points', 1)
+        daily_message_limit = config.get('daily_message_limit', 0)
+        min_message_length = config.get('min_message_length', 0)
+        invite_points = config.get('invite_points', 1)
+        daily_invite_limit = config.get('daily_invite_limit', 0)
+        points_alias = config.get('points_alias', '积分')
+        ranking_alias = config.get('ranking_alias', '积分排行')
+        
+        # 格式化限制文本
+        daily_message_limit_text = "无限制" if daily_message_limit == 0 else str(daily_message_limit)
+        min_message_length_text = "无限制" if min_message_length == 0 else str(min_message_length)
+        daily_invite_limit_text = "无限制" if daily_invite_limit == 0 else str(daily_invite_limit)
+        
+        points_text = (
+            f"积分\n\n"
+            f"群成员签到或发言获得积分，消耗积分抽奖或管理员手动扣除积分。\n\n"
+            f"状态: {status_text}\n"
+            f"签到规则:\n"
+            f"└ 发送'签到'，每日签到获得{checkin_points} 积分\n"
+            f"发言规则:\n"
+            f"└ 发言1次，获得{message_points} 积分\n"
+            f"└ 每日获取上限{daily_message_limit_text} 积分\n"
+            f"└ 最小字数长度限制: {min_message_length_text}\n"
+            f"邀请规则:\n"
+            f"└ 邀请1人，获得{invite_points} 积分\n"
+            f"└ 每日获取上限{daily_invite_limit_text} 积分\n"
+            f"积分别名:\n"
+            f"└ 群组中发送'{points_alias}'查询自己的积分\n"
+            f"排行别名:\n"
+            f"└ 群组中发送'{ranking_alias}'查询积分排名"
+        )
+        
+        # 创建按钮
+        # 根据积分系统状态显示不同的按钮
+        if points_enabled:
+            status_buttons = [
+                InlineKeyboardButton("状态:", callback_data=f'points_status_title_{group_id}'),
+                InlineKeyboardButton("✓启用", callback_data=f'points_enable_{group_id}'),
+                InlineKeyboardButton("关闭", callback_data=f'points_disable_{group_id}')
+            ]
+        else:
+            status_buttons = [
+                InlineKeyboardButton("状态:", callback_data=f'points_status_title_{group_id}'),
+                InlineKeyboardButton("启用", callback_data=f'points_enable_{group_id}'),
+                InlineKeyboardButton("✓关闭", callback_data=f'points_disable_{group_id}')
+            ]
+        
+        keyboard = [
+            status_buttons,
+            [
+                InlineKeyboardButton("⚙️ 签到规则", callback_data=f'points_checkin_rules_{group_id}'),
+                InlineKeyboardButton("⚙️ 发言规则", callback_data=f'points_message_rules_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("⚙️ 邀请规则", callback_data=f'points_invite_rules_{group_id}'),
+                InlineKeyboardButton("⚙️ 积分别名", callback_data=f'points_alias_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("⚙️ 排行别名", callback_data=f'points_ranking_alias_{group_id}'),
+                InlineKeyboardButton("➕ 增加积分", callback_data=f'points_add_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("➖ 扣除积分", callback_data=f'points_deduct_{group_id}'),
+                InlineKeyboardButton("🎁 积分抽奖", callback_data=f'points_lottery_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("🗑️ 清空数据", callback_data=f'points_clear_{group_id}'),
+                InlineKeyboardButton("⬅️ 返回", callback_data=f'back_{group_id}')
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        try:
+            await query.message.edit_text(points_text, reply_markup=reply_markup)
+        except telegram.error.BadRequest as e:
+            if "Message is not modified" in str(e):
+                # 如果消息内容没有变化，只需回答查询
+                await query.answer()
+            else:
+                # 其他错误则重新抛出
+                raise
+        return
+    
+    # 处理积分状态切换
+    elif action == 'points_enable':
+        # 启用积分系统
+        update_group_config(group_id, 'points_enabled', True)
+        
+        # 重新显示积分菜单
+        await query.answer("积分系统已启用")
+        query.data = f'points_{group_id}'
+        await button_callback(update, context)
+        return
+    
+    elif action == 'points_disable':
+        # 禁用积分系统
+        update_group_config(group_id, 'points_enabled', False)
+        
+        # 重新显示积分菜单
+        await query.answer("积分系统已关闭")
+        query.data = f'points_{group_id}'
+        await button_callback(update, context)
+        return
+    
+    # 处理积分规则设置
+    elif action == 'points_checkin_rules':
+        # 获取群组配置
+        config = get_group_config(group_id)
+        group_name = config.get('group_name', f'群组 {group_id}')
+        
+        # 获取签到规则
+        checkin_points = config.get('checkin_points', 1)
+        
+        # 创建按钮
+        keyboard = [
+            [
+                InlineKeyboardButton("设置签到获得积分", callback_data=f'set_checkin_points_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("⬅️ 返回", callback_data=f'points_{group_id}')
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.message.edit_text(
+            f"[ {group_name} ] 签到规则设置\n\n"
+            f"当前设置:\n"
+            f"- 每次签到获得 {checkin_points} 积分",
+            reply_markup=reply_markup
+        )
+        return
+    
+    elif action == 'points_message_rules':
+        # 获取群组配置
+        config = get_group_config(group_id)
+        group_name = config.get('group_name', f'群组 {group_id}')
+        
+        # 获取发言规则
+        message_points = config.get('message_points', 1)
+        daily_message_limit = config.get('daily_message_limit', 0)  # 0表示无限制
+        min_message_length = config.get('min_message_length', 0)  # 0表示无限制
+        
+        # 创建按钮
+        keyboard = [
+            [
+                InlineKeyboardButton("设置发言获得积分", callback_data=f'set_message_points_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("设置每日上限", callback_data=f'set_daily_message_limit_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("设置最小字数", callback_data=f'set_min_message_length_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("⬅️ 返回", callback_data=f'points_{group_id}')
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # 构建显示文本
+        daily_limit_text = "无限制" if daily_message_limit == 0 else str(daily_message_limit)
+        min_length_text = "无限制" if min_message_length == 0 else str(min_message_length)
+        
+        await query.message.edit_text(
+            f"[ {group_name} ] 发言规则设置\n\n"
+            f"当前设置:\n"
+            f"- 每次发言获得 {message_points} 积分\n"
+            f"- 每日获取上限: {daily_limit_text}\n"
+            f"- 最小字数要求: {min_length_text}",
+            reply_markup=reply_markup
+        )
+        return
+    
+    elif action == 'points_invite_rules':
+        # 获取群组配置
+        config = get_group_config(group_id)
+        group_name = config.get('group_name', f'群组 {group_id}')
+        
+        # 获取邀请规则
+        invite_points = config.get('invite_points', 1)
+        daily_invite_limit = config.get('daily_invite_limit', 0)  # 0表示无限制
+        
+        # 创建按钮
+        keyboard = [
+            [
+                InlineKeyboardButton("设置邀请获得积分", callback_data=f'set_invite_points_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("设置每日上限", callback_data=f'set_daily_invite_limit_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("⬅️ 返回", callback_data=f'points_{group_id}')
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # 构建显示文本
+        daily_limit_text = "无限制" if daily_invite_limit == 0 else str(daily_invite_limit)
+        
+        await query.message.edit_text(
+            f"[ {group_name} ] 邀请规则设置\n\n"
+            f"当前设置:\n"
+            f"- 每次邀请获得 {invite_points} 积分\n"
+            f"- 每日获取上限: {daily_limit_text}",
+            reply_markup=reply_markup
+        )
+        return
+    
+    elif action == 'points_alias':
+        # 获取群组配置
+        config = get_group_config(group_id)
+        group_name = config.get('group_name', f'群组 {group_id}')
+        
+        # 获取积分别名
+        points_alias = config.get('points_alias', '积分')
+        
+        # 创建按钮
+        keyboard = [
+            [
+                InlineKeyboardButton("设置积分别名", callback_data=f'set_points_alias_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("⬅️ 返回", callback_data=f'points_{group_id}')
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.message.edit_text(
+            f"[ {group_name} ] 积分别名设置\n\n"
+            f"当前设置:\n"
+            f"- 积分别名: {points_alias}\n"
+            f"- 用户可以在群组中发送 '{points_alias}' 查询自己的积分",
+            reply_markup=reply_markup
+        )
+        return
+    
+    elif action == 'points_ranking_alias':
+        # 获取群组配置
+        config = get_group_config(group_id)
+        group_name = config.get('group_name', f'群组 {group_id}')
+        
+        # 获取排行别名
+        ranking_alias = config.get('ranking_alias', '积分排行')
+        
+        # 创建按钮
+        keyboard = [
+            [
+                InlineKeyboardButton("设置排行别名", callback_data=f'set_ranking_alias_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("⬅️ 返回", callback_data=f'points_{group_id}')
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.message.edit_text(
+            f"[ {group_name} ] 排行别名设置\n\n"
+            f"当前设置:\n"
+            f"- 排行别名: {ranking_alias}\n"
+            f"- 用户可以在群组中发送 '{ranking_alias}' 查询积分排名",
+            reply_markup=reply_markup
+        )
+        return
+    
+    elif action == 'points_add':
+        # 获取群组配置
+        config = get_group_config(group_id)
+        group_name = config.get('group_name', f'群组 {group_id}')
+        
+        # 设置用户状态为等待输入用户ID
+        context.user_data['adding_points'] = {
+            'group_id': group_id,
+            'step': 'user_id'
+        }
+        
+        # 创建取消按钮
+        keyboard = [[InlineKeyboardButton("❌ 取消", callback_data=f'cancel_points_add_{group_id}')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.message.edit_text(
+            f"您正在为 [ {group_name} ] 增加积分。\n\n"
+            f"请输入用户ID或用户名(@username)：",
+            reply_markup=reply_markup
+        )
+        return
+    
+    elif action == 'points_deduct':
+        # 获取群组配置
+        config = get_group_config(group_id)
+        group_name = config.get('group_name', f'群组 {group_id}')
+        
+        # 设置用户状态为等待输入用户ID
+        context.user_data['deducting_points'] = {
+            'group_id': group_id,
+            'step': 'user_id'
+        }
+        
+        # 创建取消按钮
+        keyboard = [[InlineKeyboardButton("❌ 取消", callback_data=f'cancel_points_deduct_{group_id}')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.message.edit_text(
+            f"您正在为 [ {group_name} ] 扣除积分。\n\n"
+            f"请输入用户ID或用户名(@username)：",
+            reply_markup=reply_markup
+        )
+        return
+    
+    elif action == 'points_lottery':
+        # 获取群组配置
+        config = get_group_config(group_id)
+        group_name = config.get('group_name', f'群组 {group_id}')
+        
+        # 创建按钮
+        keyboard = [
+            [
+                InlineKeyboardButton("创建积分抽奖", callback_data=f'create_points_lottery_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("查看积分抽奖", callback_data=f'view_points_lottery_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("⬅️ 返回", callback_data=f'points_{group_id}')
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.message.edit_text(
+            f"[ {group_name} ] 积分抽奖\n\n"
+            f"用户可以使用积分参与抽奖活动。",
+            reply_markup=reply_markup
+        )
+        return
+    
+    elif action == 'points_clear':
+        # 获取群组配置
+        config = get_group_config(group_id)
+        group_name = config.get('group_name', f'群组 {group_id}')
+        
+        # 创建确认按钮
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ 确认清空", callback_data=f'confirm_points_clear_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("❌ 取消", callback_data=f'points_{group_id}')
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.message.edit_text(
+            f"⚠️ 警告 ⚠️\n\n"
+            f"您确定要清空 [ {group_name} ] 的所有积分数据吗？\n"
+            f"此操作不可逆，所有用户的积分将被重置为0。",
+            reply_markup=reply_markup
+        )
+        return
+    
+    elif action == 'confirm_points_clear':
+        # 获取群组配置
+        config = get_group_config(group_id)
+        group_name = config.get('group_name', f'群组 {group_id}')
+        
+        # 清空积分数据
+        update_group_config(group_id, 'user_points', {})
+        
+        # 创建返回按钮
+        keyboard = [[InlineKeyboardButton("⬅️ 返回", callback_data=f'points_{group_id}')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.message.edit_text(
+            f"✅ 已清空 [ {group_name} ] 的所有积分数据。",
+            reply_markup=reply_markup
+        )
+        return
+    
+    elif action == 'cancel_points_add' or action == 'cancel_points_deduct':
+        # 清除用户状态
+        if 'adding_points' in context.user_data:
+            context.user_data.pop('adding_points')
+        if 'deducting_points' in context.user_data:
+            context.user_data.pop('deducting_points')
+        
+        # 返回积分菜单
+        query.data = f'points_{group_id}'
+        await button_callback(update, context)
         return
     
     elif action == 'new_member_restriction' and not group_id:
@@ -789,6 +1208,16 @@ async def handle_private_message(update, context):
     if context.user_data.get('creating_lottery'):
         await handle_lottery_creation_input(update, context)
         return
+    
+    # 检查是否正在增加积分
+    if context.user_data.get('adding_points'):
+        await handle_points_add_input(update, context)
+        return
+    
+    # 检查是否正在扣除积分
+    if context.user_data.get('deducting_points'):
+        await handle_points_deduct_input(update, context)
+        return
         
     # 检查是否是第一次对话
     if not context.user_data.get('menu_shown'):
@@ -833,6 +1262,142 @@ async def handle_private_message(update, context):
             f'设置[ 群组 ]，选择要更改的项目',
             reply_markup=reply_markup
         )
+
+# 处理增加积分的用户输入
+async def handle_points_add_input(update, context):
+    """处理用户在增加积分过程中的输入"""
+    points_data = context.user_data['adding_points']
+    group_id = points_data['group_id']
+    step = points_data['step']
+    
+    # 获取群组名称
+    config = get_group_config(group_id)
+    group_name = config.get('group_name', f'群组 {group_id}')
+    
+    # 创建取消按钮
+    keyboard = [[InlineKeyboardButton("❌ 取消", callback_data=f'cancel_points_add_{group_id}')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # 处理不同步骤的输入
+    if step == 'user_id':
+        # 保存用户ID或用户名
+        user_identifier = update.message.text.strip()
+        if not user_identifier:
+            await update.message.reply_text(
+                "用户ID或用户名不能为空，请重新输入：",
+                reply_markup=reply_markup
+            )
+            return
+        
+        points_data['user_identifier'] = user_identifier
+        points_data['step'] = 'points_amount'
+        
+        await update.message.reply_text(
+            f"用户已设置为：{user_identifier}\n\n"
+            "请输入要增加的积分数量：",
+            reply_markup=reply_markup
+        )
+    
+    elif step == 'points_amount':
+        # 保存积分数量
+        try:
+            points_amount = int(update.message.text.strip())
+            if points_amount <= 0:
+                raise ValueError("积分数量必须大于0")
+            
+            points_data['points_amount'] = points_amount
+            points_data['step'] = 'confirm'
+            
+            # 显示确认信息
+            confirm_text = (
+                f"请确认增加积分信息：\n\n"
+                f"群组：{group_name}\n"
+                f"用户：{points_data['user_identifier']}\n"
+                f"增加积分：{points_amount}\n\n"
+                f"确认增加积分？"
+            )
+            
+            # 创建确认按钮
+            keyboard = [
+                [InlineKeyboardButton("✅ 确认增加", callback_data=f'confirm_points_add_{group_id}')],
+                [InlineKeyboardButton("❌ 取消", callback_data=f'cancel_points_add_{group_id}')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(confirm_text, reply_markup=reply_markup)
+        except ValueError:
+            await update.message.reply_text(
+                "请输入有效的正整数：",
+                reply_markup=reply_markup
+            )
+
+# 处理扣除积分的用户输入
+async def handle_points_deduct_input(update, context):
+    """处理用户在扣除积分过程中的输入"""
+    points_data = context.user_data['deducting_points']
+    group_id = points_data['group_id']
+    step = points_data['step']
+    
+    # 获取群组名称
+    config = get_group_config(group_id)
+    group_name = config.get('group_name', f'群组 {group_id}')
+    
+    # 创建取消按钮
+    keyboard = [[InlineKeyboardButton("❌ 取消", callback_data=f'cancel_points_deduct_{group_id}')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # 处理不同步骤的输入
+    if step == 'user_id':
+        # 保存用户ID或用户名
+        user_identifier = update.message.text.strip()
+        if not user_identifier:
+            await update.message.reply_text(
+                "用户ID或用户名不能为空，请重新输入：",
+                reply_markup=reply_markup
+            )
+            return
+        
+        points_data['user_identifier'] = user_identifier
+        points_data['step'] = 'points_amount'
+        
+        await update.message.reply_text(
+            f"用户已设置为：{user_identifier}\n\n"
+            "请输入要扣除的积分数量：",
+            reply_markup=reply_markup
+        )
+    
+    elif step == 'points_amount':
+        # 保存积分数量
+        try:
+            points_amount = int(update.message.text.strip())
+            if points_amount <= 0:
+                raise ValueError("积分数量必须大于0")
+            
+            points_data['points_amount'] = points_amount
+            points_data['step'] = 'confirm'
+            
+            # 显示确认信息
+            confirm_text = (
+                f"请确认扣除积分信息：\n\n"
+                f"群组：{group_name}\n"
+                f"用户：{points_data['user_identifier']}\n"
+                f"扣除积分：{points_amount}\n\n"
+                f"确认扣除积分？"
+            )
+            
+            # 创建确认按钮
+            keyboard = [
+                [InlineKeyboardButton("✅ 确认扣除", callback_data=f'confirm_points_deduct_{group_id}')],
+                [InlineKeyboardButton("❌ 取消", callback_data=f'cancel_points_deduct_{group_id}')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(confirm_text, reply_markup=reply_markup)
+        except ValueError:
+            await update.message.reply_text(
+                "请输入有效的正整数：",
+                reply_markup=reply_markup
+            )
 
 # 处理抽奖创建过程中的用户输入
 async def handle_lottery_creation_input(update, context):
@@ -1009,6 +1574,397 @@ async def show_pending_lotteries(update, context, group_id):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.message.edit_text(text, reply_markup=reply_markup)
+
+# 处理积分功能
+async def handle_points_action(update, context, group_id=None):
+    """处理积分功能"""
+    query = update.callback_query
+    
+    if not group_id:
+        # 如果没有指定群组ID，显示选择群组界面
+        await query.answer("请选择要管理积分的群组")
+        # 获取用户管理的群组列表
+        admin_groups = get_admin_groups(query.from_user.id)
+        
+        if not admin_groups:
+            await query.edit_message_text("您没有管理的群组。")
+            return
+        
+        # 创建群组选择按钮
+        keyboard = []
+        for group in admin_groups:
+            group_id = group['id']
+            group_name = group.get('name', f'群组 {group_id}')
+            keyboard.append([InlineKeyboardButton(group_name, callback_data=f'points_{group_id}')])
+        
+        # 添加返回主菜单按钮
+        keyboard.append([InlineKeyboardButton("返回主菜单", callback_data='back_to_main')])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text("请选择要管理积分的群组：", reply_markup=reply_markup)
+    else:
+        # 获取群组配置
+        config = get_group_config(group_id)
+        group_name = config.get('group_name', f'群组 {group_id}')
+        
+        # 获取积分统计信息
+        points_stats = get_points_stats(group_id)
+        total_users = points_stats.get('total_users', 0)
+        total_points = points_stats.get('total_points', 0)
+        
+        # 创建积分管理菜单
+        message_text = (
+            f"【{group_name}】积分管理\n\n"
+            f"当前共有 {total_users} 名用户，总积分 {total_points}\n\n"
+            "请选择操作："
+        )
+        
+        # 创建积分管理按钮
+        keyboard = [
+            [
+                InlineKeyboardButton("📋 积分规则", callback_data=f'points_rules_{group_id}'),
+                InlineKeyboardButton("🏆 积分排行", callback_data=f'points_ranking_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("🎁 积分奖励", callback_data=f'points_rewards_{group_id}'),
+                InlineKeyboardButton("⚙️ 积分设置", callback_data=f'points_settings_{group_id}')
+            ],
+            [
+                InlineKeyboardButton("➕ 增加积分", callback_data=f'add_points_{group_id}'),
+                InlineKeyboardButton("➖ 扣除积分", callback_data=f'deduct_points_{group_id}')
+            ],
+            [InlineKeyboardButton("返回主菜单", callback_data='back_to_main')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(message_text, reply_markup=reply_markup)
+
+# 显示积分规则
+async def show_points_rules(update, context, group_id):
+    """显示积分规则"""
+    query = update.callback_query
+    await query.answer("正在加载积分规则...")
+    
+    # 获取群组配置
+    config = get_group_config(group_id)
+    group_name = config.get('group_name', f'群组 {group_id}')
+    
+    # 获取积分规则
+    points_rules = config.get('points_rules', {})
+    
+    # 构建规则文本
+    rules_text = f"【{group_name}】积分规则\n\n"
+    
+    if not points_rules:
+        rules_text += "暂无积分规则，请在积分设置中添加。"
+    else:
+        for rule_name, rule_value in points_rules.items():
+            rules_text += f"• {rule_name}: {rule_value} 积分\n"
+    
+    # 创建返回按钮
+    keyboard = [[InlineKeyboardButton("返回积分管理", callback_data=f'back_to_points_{group_id}')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(rules_text, reply_markup=reply_markup)
+
+# 显示积分排行榜
+async def show_points_ranking(update, context, group_id):
+    """显示积分排行榜"""
+    query = update.callback_query
+    await query.answer("正在加载积分排行榜...")
+    
+    # 获取群组配置
+    config = get_group_config(group_id)
+    group_name = config.get('group_name', f'群组 {group_id}')
+    
+    # 获取积分排行榜
+    ranking = get_points_ranking(group_id)
+    
+    # 构建排行榜文本
+    ranking_text = f"【{group_name}】积分排行榜\n\n"
+    
+    if not ranking:
+        ranking_text += "暂无积分数据。"
+    else:
+        for i, user in enumerate(ranking[:10], 1):
+            user_name = user.get('name', f"用户 {user.get('id')}")
+            points = user.get('points', 0)
+            ranking_text += f"{i}. {user_name}: {points} 积分\n"
+    
+    # 创建返回按钮
+    keyboard = [[InlineKeyboardButton("返回积分管理", callback_data=f'back_to_points_{group_id}')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(ranking_text, reply_markup=reply_markup)
+
+# 显示积分奖励
+async def show_points_rewards(update, context, group_id):
+    """显示积分奖励"""
+    query = update.callback_query
+    await query.answer("正在加载积分奖励...")
+    
+    # 获取群组配置
+    config = get_group_config(group_id)
+    group_name = config.get('group_name', f'群组 {group_id}')
+    
+    # 获取积分奖励
+    rewards = config.get('points_rewards', {})
+    
+    # 构建奖励文本
+    rewards_text = f"【{group_name}】积分奖励\n\n"
+    
+    if not rewards:
+        rewards_text += "暂无积分奖励，请在积分设置中添加。"
+    else:
+        for points_required, reward_name in rewards.items():
+            rewards_text += f"• {reward_name}: 需要 {points_required} 积分\n"
+    
+    # 创建返回按钮
+    keyboard = [[InlineKeyboardButton("返回积分管理", callback_data=f'back_to_points_{group_id}')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(rewards_text, reply_markup=reply_markup)
+
+# 显示积分设置
+async def show_points_settings(update, context, group_id):
+    """显示积分设置"""
+    query = update.callback_query
+    await query.answer("正在加载积分设置...")
+    
+    # 获取群组配置
+    config = get_group_config(group_id)
+    group_name = config.get('group_name', f'群组 {group_id}')
+    
+    # 获取积分设置
+    points_settings = config.get('points_settings', {})
+    
+    # 构建设置文本
+    settings_text = f"【{group_name}】积分设置\n\n"
+    
+    # 获取设置状态
+    daily_message = points_settings.get('daily_message', False)
+    auto_rewards = points_settings.get('auto_rewards', False)
+    
+    # 创建设置按钮
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                f"{'✅' if daily_message else '❌'} 每日积分提醒", 
+                callback_data=f'toggle_daily_message_{group_id}'
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                f"{'✅' if auto_rewards else '❌'} 自动发放奖励", 
+                callback_data=f'toggle_auto_rewards_{group_id}'
+            )
+        ],
+        [
+            InlineKeyboardButton("编辑积分规则", callback_data=f'edit_points_rules_{group_id}'),
+            InlineKeyboardButton("编辑积分奖励", callback_data=f'edit_points_rewards_{group_id}')
+        ],
+        [InlineKeyboardButton("返回积分管理", callback_data=f'back_to_points_{group_id}')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(settings_text, reply_markup=reply_markup)
+
+# 开始增加积分流程
+async def start_add_points(update, context, group_id):
+    """开始增加积分流程"""
+    query = update.callback_query
+    
+    # 获取群组配置
+    config = get_group_config(group_id)
+    group_name = config.get('group_name', f'群组 {group_id}')
+    
+    # 初始化增加积分状态
+    context.user_data['adding_points'] = {
+        'group_id': group_id,
+        'step': 'user_id'
+    }
+    
+    # 创建取消按钮
+    keyboard = [[InlineKeyboardButton("❌ 取消", callback_data=f'cancel_points_add_{group_id}')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        f"【{group_name}】增加积分\n\n"
+        "请输入要增加积分的用户ID或用户名：",
+        reply_markup=reply_markup
+    )
+
+# 开始扣除积分流程
+async def start_deduct_points(update, context, group_id):
+    """开始扣除积分流程"""
+    query = update.callback_query
+    
+    # 获取群组配置
+    config = get_group_config(group_id)
+    group_name = config.get('group_name', f'群组 {group_id}')
+    
+    # 初始化扣除积分状态
+    context.user_data['deducting_points'] = {
+        'group_id': group_id,
+        'step': 'user_id'
+    }
+    
+    # 创建取消按钮
+    keyboard = [[InlineKeyboardButton("❌ 取消", callback_data=f'cancel_points_deduct_{group_id}')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        f"【{group_name}】扣除积分\n\n"
+        "请输入要扣除积分的用户ID或用户名：",
+        reply_markup=reply_markup
+    )
+
+# 确认增加积分
+async def confirm_add_points(update, context, group_id):
+    """确认增加积分"""
+    query = update.callback_query
+    
+    # 检查是否有增加积分的数据
+    if 'adding_points' not in context.user_data or context.user_data['adding_points']['group_id'] != group_id:
+        await query.edit_message_text("增加积分操作已取消。")
+        return
+    
+    # 获取增加积分数据
+    points_data = context.user_data['adding_points']
+    user_identifier = points_data.get('user_identifier')
+    points_amount = points_data.get('points_amount')
+    
+    # 获取群组配置
+    config = get_group_config(group_id)
+    group_name = config.get('group_name', f'群组 {group_id}')
+    
+    # 增加积分
+    success = add_user_points(group_id, user_identifier, points_amount)
+    
+    # 清除增加积分状态
+    del context.user_data['adding_points']
+    
+    # 创建返回按钮
+    keyboard = [[InlineKeyboardButton("返回积分管理", callback_data=f'back_to_points_{group_id}')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if success:
+        await query.edit_message_text(
+            f"✅ 已成功为用户 {user_identifier} 增加 {points_amount} 积分。",
+            reply_markup=reply_markup
+        )
+    else:
+        await query.edit_message_text(
+            f"❌ 增加积分失败，请检查用户ID是否正确。",
+            reply_markup=reply_markup
+        )
+
+# 取消增加积分
+async def cancel_add_points(update, context, group_id):
+    """取消增加积分"""
+    query = update.callback_query
+    
+    # 清除增加积分状态
+    if 'adding_points' in context.user_data:
+        del context.user_data['adding_points']
+    
+    # 返回积分管理菜单
+    await handle_points_action(update, context, group_id)
+
+# 确认扣除积分
+async def confirm_deduct_points(update, context, group_id):
+    """确认扣除积分"""
+    query = update.callback_query
+    
+    # 检查是否有扣除积分的数据
+    if 'deducting_points' not in context.user_data or context.user_data['deducting_points']['group_id'] != group_id:
+        await query.edit_message_text("扣除积分操作已取消。")
+        return
+    
+    # 获取扣除积分数据
+    points_data = context.user_data['deducting_points']
+    user_identifier = points_data.get('user_identifier')
+    points_amount = points_data.get('points_amount')
+    
+    # 获取群组配置
+    config = get_group_config(group_id)
+    group_name = config.get('group_name', f'群组 {group_id}')
+    
+    # 扣除积分
+    success = deduct_user_points(group_id, user_identifier, points_amount)
+    
+    # 清除扣除积分状态
+    del context.user_data['deducting_points']
+    
+    # 创建返回按钮
+    keyboard = [[InlineKeyboardButton("返回积分管理", callback_data=f'back_to_points_{group_id}')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if success:
+        await query.edit_message_text(
+            f"✅ 已成功从用户 {user_identifier} 扣除 {points_amount} 积分。",
+            reply_markup=reply_markup
+        )
+    else:
+        await query.edit_message_text(
+            f"❌ 扣除积分失败，请检查用户ID是否正确或用户积分是否足够。",
+            reply_markup=reply_markup
+        )
+
+# 取消扣除积分
+async def cancel_deduct_points(update, context, group_id):
+    """取消扣除积分"""
+    query = update.callback_query
+    
+    # 清除扣除积分状态
+    if 'deducting_points' in context.user_data:
+        del context.user_data['deducting_points']
+    
+    # 返回积分管理菜单
+    await handle_points_action(update, context, group_id)
+
+# 获取积分统计信息 (使用数据库)
+def get_points_stats(group_id):
+    # 从数据库获取群组配置
+    config = get_group_config(group_id)
+    
+    # 返回积分统计信息
+    return {
+        'enabled': config.get('points_enabled', False),
+        'total_users': 0,  # 这个可以从数据库中获取
+        'total_points': 0  # 这个可以从数据库中获取
+    }
+
+# 获取积分排行榜 (使用数据库)
+def get_points_ranking(group_id, limit=10):
+    # 从数据库获取积分排行榜
+    return db_get_points_ranking(group_id, limit)
+
+# 增加用户积分 (使用数据库)
+def add_user_points(group_id, user_identifier, points_amount, reason=None, admin_id=None):
+    # 增加用户积分
+    return add_user_points(group_id, user_identifier, points_amount, reason, admin_id)
+
+# 扣除用户积分 (使用数据库)
+def deduct_user_points(group_id, user_identifier, points_amount, reason=None, admin_id=None):
+    # 扣除用户积分
+    return deduct_user_points(group_id, user_identifier, points_amount, reason, admin_id)
+
+# 获取用户管理的群组列表
+def get_admin_groups(user_id):
+    """获取用户管理的群组列表"""
+    # 这里应该从数据库获取用户管理的群组列表
+    # 示例数据
+    configs = load_configs()
+    admin_groups = []
+    
+    for group_id, config in configs.items():
+        admin_groups.append({
+            'id': group_id,
+            'name': config.get('group_name', f'群组 {group_id}')
+        })
+    
+    return admin_groups
 
 # 只有直接运行此文件时才执行main函数
 if __name__ == '__main__':

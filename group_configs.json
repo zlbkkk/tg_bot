@@ -12,5 +12,47 @@
     "anti_spam": false,
     "auto_delete": false,
     "group_name": "群组 settings"
+  },
+  "rules": {
+    "welcome_msg": "欢迎新成员加入！",
+    "language": "zh",
+    "anti_spam": false,
+    "auto_delete": false,
+    "group_name": "群组 rules"
+  },
+  "checkin": {
+    "welcome_msg": "欢迎新成员加入！",
+    "language": "zh",
+    "anti_spam": false,
+    "auto_delete": false,
+    "group_name": "群组 checkin"
+  },
+  "enable": {
+    "welcome_msg": "欢迎新成员加入！",
+    "language": "zh",
+    "anti_spam": false,
+    "auto_delete": false,
+    "group_name": "群组 enable"
+  },
+  "message": {
+    "welcome_msg": "欢迎新成员加入！",
+    "language": "zh",
+    "anti_spam": false,
+    "auto_delete": false,
+    "group_name": "群组 message"
+  },
+  "alias": {
+    "welcome_msg": "欢迎新成员加入！",
+    "language": "zh",
+    "anti_spam": false,
+    "auto_delete": false,
+    "group_name": "群组 alias"
+  },
+  "invite": {
+    "welcome_msg": "欢迎新成员加入！",
+    "language": "zh",
+    "anti_spam": false,
+    "auto_delete": false,
+    "group_name": "群组 invite"
   }
 }
